@@ -1,0 +1,9 @@
+# Compiled files
+*.o
+*.bc
+*.ll
+
+# Builds
+
+# OS Files
+.DS_Store*
