@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Make a build directory if not exist
+if [ ! -d build ]; then
+  mkdir build
+fi
+
+CONFIG=Debug+Asserts
+
+CYGROOT=$PWD
+export PATH=$PATH:$CYGROOT/build/$CONFIG/bin
+#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CYGROOT/build/$CONFIG/lib
+export LDFLAGS="$LDFLAGS -L$CYGROOT/build/$CONFIG/lib"
+
+

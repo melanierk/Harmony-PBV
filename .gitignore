@@ -4,6 +4,7 @@
 *.ll
 
 # Builds
+build/*
 
 # OS Files
 .DS_Store*

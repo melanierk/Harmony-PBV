@@ -1,0 +1,6 @@
+pushd build
+rm -rf *
+../llvm-3.0.src/configure --disable-optimized --enable-assertions --enable-debug-symbols
+make -j 7
+popd
+
