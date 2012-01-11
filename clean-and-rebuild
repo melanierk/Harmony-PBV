@@ -1,6 +1,6 @@
 pushd build
 rm -rf *
-../llvm-3.0.src/configure --disable-optimized --enable-assertions --enable-debug-symbols
-make -j 7
+../llvm-3.0.src/configure --disable-optimized --enable-assertions --enable-debug-symbols --with-binutils-include=/usr/include --disable-docs
+make -j 2
 popd
 

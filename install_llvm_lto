@@ -1,0 +1,6 @@
+#!/bin/sh
+
+sudo mkdir /usr/lib/bfd-plugins
+sudo rm /usr/lib/bfd-plugins/LLVMgold.so
+sudo cp $PWD/build/$LLVM_CONFIG/lib/LLVMgold.so /usr/lib/bfd-plugins
+
