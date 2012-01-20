@@ -93,6 +93,9 @@ void initializeDomViewerPass(PassRegistry&);
 void initializeDominanceFrontierPass(PassRegistry&);
 void initializeDominatorTreePass(PassRegistry&);
 void initializeEdgeBundlesPass(PassRegistry&);
+
+void initializePtProfilePass(PassRegistry&);
+
 void initializeEdgeProfilerPass(PassRegistry&);
 void initializePathProfilerPass(PassRegistry&);
 void initializeGCOVProfilerPass(PassRegistry&);

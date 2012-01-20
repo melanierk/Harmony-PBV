@@ -66,6 +66,9 @@ namespace {
       (void) llvm::createDomPrinterPass();
       (void) llvm::createDomOnlyViewerPass();
       (void) llvm::createDomViewerPass();
+
+      (void) llvm::createPtProfilePass();
+
       (void) llvm::createEdgeProfilerPass();
       (void) llvm::createOptimalEdgeProfilerPass();
       (void) llvm::createPathProfilerPass();

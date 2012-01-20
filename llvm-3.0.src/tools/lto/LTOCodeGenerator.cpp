@@ -47,10 +47,13 @@
 #include "llvm/Config/config.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/PtProfile/PtProfile.h"
 #include <cstdlib>
 #include <unistd.h>
 #include <fcntl.h>
 
+// for LTO instrumentation
+#include "llvm/Assembly/PrintModulePass.h"
 
 using namespace llvm;
 
@@ -388,6 +391,11 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
                                                 !DisableInline);
 
     // Make sure everything is still good.
+    passes.add(createVerifierPass());
+    // kt2384 -- at this point, all LTO optimizations have been applied, and
+    //           IR is still valid. Add our instrumentation pass here.
+    passes.add(createPtProfilePass());
+    passes.add(createPrintModulePass(&errs()));
     passes.add(createVerifierPass());
 
     FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);

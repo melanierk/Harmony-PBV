@@ -18,6 +18,9 @@ namespace llvm {
 
 class ModulePass;
 
+// Insert ptprofile instrumentation
+ModulePass *createPtProfilePass();
+
 // Insert edge profiling instrumentation
 ModulePass *createEdgeProfilerPass();
 
