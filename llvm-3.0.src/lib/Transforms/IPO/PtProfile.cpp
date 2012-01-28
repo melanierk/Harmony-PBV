@@ -51,6 +51,9 @@ static IntegerType *int32Ty;
 static FunctionType *funcVoidTy;
 static PointerType *ptrFuncVoidTy;
 static StructType *globalCDtorElemTy;
+static FunctionType *startRoutineTy;
+static PointerType *ptrStartRoutineTy;
+static PointerType *voidPtrTy;
 
 
 static void insertModuleInit(Module &M) {
@@ -105,25 +108,56 @@ static void initializeTyConstants(Module &M) {
   funcVoidTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
   ptrFuncVoidTy = ((Type *)funcVoidTy)->getPointerTo();
   globalCDtorElemTy = StructType::get((Type *) int32Ty, (Type *) ptrFuncVoidTy, NULL);
+  voidPtrTy = Type::getInt8Ty(M.getContext())->getPointerTo();
+  std::vector<Type*> startRoutineArgs;
+  startRoutineArgs.push_back(voidPtrTy);
+  startRoutineTy = FunctionType::get(voidPtrTy, startRoutineArgs, /*isVarArg*/ false);
+  ptrStartRoutineTy = ((Type *)startRoutineTy)->getPointerTo();
 }
 
+static Module *pM;
 namespace {
   struct PthreadCreateVisitor : public InstVisitor<PthreadCreateVisitor> {
+    int ci;
+    PthreadCreateVisitor() : InstVisitor(), ci(0) { }
     void visitCallInst(CallInst &call) {
       Function *f = cast<Function>(call.getCalledValue());
-      errs() << f->getName();
+      if (f->getName() == "pthread_create") {
+        DEBUG(errs() << "PthreadCreateVisitor: " << *f << "Was a pthread_create\n");
+        ci++;
+        Function *start_routine = cast<Function>(call.getArgOperand(2));
+        std::string capture_name("capture");
+        capture_name += "_";
+        capture_name += start_routine->getName();
+//        GlobalVariable *capture_start_routine = new GlobalVariable(
+//            ptrStartRoutineTy, false, Function::InternalLinkage,
+//            /*Initializer*/0, capture_name);
+
+        GlobalVariable *capture_start_routine = new GlobalVariable(
+            *pM, ptrStartRoutineTy, false, Function::InternalLinkage,
+            /*Initializer*/0, capture_name);
+
+        DEBUG(errs() << "the global variable is " << *capture_start_routine << "\n");
+        DEBUG(errs() << "parent of the global variable is " << *capture_start_routine->getParent() << "\n");
+        StoreInst(start_routine, capture_start_routine, /*isVolatile*/ false,
+                  /*insertBefore*/ &call);
+        // TODO: make the shim
+      }
     }
   };
 }
 
 bool llvm::PtProfile::runOnModule(Module &M) {
+  pM = &M;
   initializeTyConstants(M);
   insertModuleInit(M);
 
   // First pass: intercept calls to pthread_create.
-  
   PthreadCreateVisitor PtCV;
+  errs() << "prior to visit\n";
   PtCV.visit(M);
+  errs() << "after visit\n";
+  
   return true;
 }
 
