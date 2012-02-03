@@ -50,6 +50,7 @@ char PtProfile::ID = 0;
 INITIALIZE_PASS(PtProfile, "insert-ptprofile", "Instrument pthread block profiling", false, false)
 
 static Module *pM;
+
 // some types
 static IntegerType *int32Ty;
 static FunctionType *funcVoidTy;
@@ -58,6 +59,8 @@ static StructType *globalCDtorElemTy;
 static FunctionType *startRoutineTy;
 static PointerType *ptrStartRoutineTy;
 static PointerType *voidPtrTy;
+static StructType *shimWrapperTy;
+static PointerType *ptrShimWrapperTy;
 
 void llvm::PtProfile::insertModuleInit(Module &M) {
   std::vector<Constant *> ctors;
@@ -116,6 +119,10 @@ static void initializeTyConstants(Module &M) {
   startRoutineArgs.push_back(voidPtrTy);
   startRoutineTy = FunctionType::get(voidPtrTy, startRoutineArgs, /*isVarArg*/ false);
   ptrStartRoutineTy = ((Type *)startRoutineTy)->getPointerTo();
+  Type *wrapper_tmp[] = { ptrStartRoutineTy, voidPtrTy };
+  shimWrapperTy = StructType::create(ArrayRef<Type*>(wrapper_tmp, 2), 
+    "PROF_shim_wrapper_t");
+  ptrShimWrapperTy = shimWrapperTy->getPointerTo();
 }
 
 namespace {
@@ -124,49 +131,6 @@ namespace {
     int ci;
     IRBuilder<> builder;
     Constant *threadInitFn;
-
-    GlobalVariable *capturePthreadCreateStartRoutine(Function *start_routine, Instruction *insertBefore) {
-      std::string capture_name("PROF_IN_capture");
-      capture_name += "_";
-      capture_name += start_routine->getName();
-
-      GlobalVariable *capture_start_routine = new GlobalVariable(
-          *pM, ptrStartRoutineTy, false, Function::CommonLinkage,
-          ConstantPointerNull::get(ptrStartRoutineTy), capture_name);
-
-      DEBUG(errs() << "the global variable is " << *capture_start_routine << "\n");
-      StoreInst *si = new StoreInst(start_routine, capture_start_routine, /*insertBefore*/ insertBefore);
-      
-      return capture_start_routine;
-    }
-
-    Function *shimStartRoutine(StringRef name, GlobalVariable *capture_start_routine, Value *arg) {
-      // make the function prototype
-      std::string shimStartRoutineName("PROF_IN_shim_");
-      shimStartRoutineName += name;
-      Function *F = Function::Create(startRoutineTy,
-          Function::ExternalLinkage, shimStartRoutineName, pM);
-      if (F->getName() != shimStartRoutineName) { // conflicted
-        DEBUG(errs() << "in shimStartRoutine, function creation conflicted: "
-                     << "wanted name to be " << shimStartRoutineName << " but got "
-                     << F->getName() << " instead.");
-        return 0;
-      }
-      // make an entry basic block
-      BasicBlock *BB = BasicBlock::Create(pM->getContext(), "entry", F);
-      builder.SetInsertPoint(BB);
-      
-      // insert a call to PROF_init_thread
-      builder.CreateCall(threadInitFn);
-      // insert a call (return) to start_routine (for real)
-      ArrayRef<Value*> startRoutineArg(arg);
-      // get 
-
-      LoadInst *start_routine = builder.CreateLoad(capture_start_routine);
-      CallInst *ci = builder.CreateCall(start_routine, arg);
-      builder.CreateRet(ci);
-      return F;
-    }
 
   public:
     PthreadCreateVisitor() : InstVisitor(), ci(0), builder(pM->getContext()),
@@ -180,20 +144,41 @@ namespace {
       if (f && f->getName() == "pthread_create") {
         DEBUG(errs() << "PthreadCreateVisitor: " << call << "Was a call to pthread_create\n");
         ci++;
-        Function *start_routine = cast<Function>(call.getArgOperand(2));
-        GlobalVariable *capture_start_routine = 
-          capturePthreadCreateStartRoutine(start_routine, cast<Instruction>(&call));
+
+        builder.SetInsertPoint(&call);
+  
+        Instruction *wrapper = CallInst::CreateMalloc(/*InsertBefore*/ &call,
+            /*IntPtrTy*/ int32Ty,
+            /*AllocTy*/ shimWrapperTy,
+            /*AllocSize*/ builder.getInt32(1));
+        Value *wrapper_start_routine = builder.CreateConstGEP2_32(
+            wrapper, 0, 0);
+        Value *wrapper_arg = builder.CreateConstGEP2_32(
+            wrapper, 0, 1);
+        
+        DEBUG(errs() << "wrapper_t = " << *shimWrapperTy);
+        DEBUG(errs() << "wrapper = " << *wrapper << "\n");
+        DEBUG(errs() << "wrapper_start_routine = " << *wrapper_start_routine
+                     << " and " << "wrapper_arg = " << *wrapper_arg << "\n");
+        Value *start_routine = call.getArgOperand(2);
+        Value *arg           = call.getArgOperand(3);
+        builder.CreateStore(start_routine, wrapper_start_routine);
+        builder.CreateStore(arg, wrapper_arg);
+        
+        /*
         Function *shim = shimStartRoutine(start_routine->getName(),
             capture_start_routine,
             call.getArgOperand(3));
-        DEBUG(errs() << "call.getArgOperand(2) " << *call.getArgOperand(2) << "\n");
-        DEBUG(errs() << "shim is " << *shim << "\n");
+        */
         
         // call pthread_create with shim instead of start_routine
+        Constant *shim = pM->getOrInsertFunction("PROF_shim_start_routine",
+            startRoutineTy);
+        Value *newArg = builder.CreateBitCast(wrapper, voidPtrTy);
         Value *newArgs[] = {call.getArgOperand(0), 
                             call.getArgOperand(1),
                             shim,
-                            call.getArgOperand(3)};
+                            newArg};
         CallInst *newCall = CallInst::Create(call.getCalledValue(),
                                              ArrayRef<Value*>(newArgs, 4),
                                              Twine("PROF_IN_patched_call"),
