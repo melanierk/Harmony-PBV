@@ -2,6 +2,7 @@
 *.o
 *.bc
 *.ll
+a.out
 
 # Builds
 build/*
