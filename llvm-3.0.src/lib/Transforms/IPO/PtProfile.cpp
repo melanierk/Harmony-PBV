@@ -25,6 +25,8 @@
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/PtProfile/PtProfile.h"
 #include <vector>
+#include <algorithm>
+#include <cstdio>
 
 using namespace llvm;
 
@@ -32,11 +34,14 @@ namespace llvm {
   class PtProfile : public ModulePass {
     bool runOnModule(Module &M);
   private:
+    Constant *sampleCall;
     void insertModuleInit(Module &M);
+    void insertSampleCall(int n, BasicBlock *B);
+    void insertBBMap(const std::vector<BasicBlock*> &bbs);
 
   public:
     static char ID;
-    PtProfile() : ModulePass(ID) {
+    PtProfile() : ModulePass(ID), sampleCall(0) {
       initializePtProfilePass(*PassRegistry::getPassRegistry());
     }
     virtual const char *getPassName() const { return "Pthread Block Profiler"; }
@@ -53,6 +58,7 @@ static Module *pM;
 
 // some types
 static IntegerType *int32Ty;
+static IntegerType *int8Ty;
 static FunctionType *funcVoidTy;
 static PointerType *ptrFuncVoidTy;
 static StructType *globalCDtorElemTy;
@@ -61,6 +67,32 @@ static PointerType *ptrStartRoutineTy;
 static PointerType *voidPtrTy;
 static StructType *shimWrapperTy;
 static PointerType *ptrShimWrapperTy;
+static Type* voidTy;
+static FunctionType *sampleCallTy;
+
+static void initializeTyConstants(Module &M) {
+  LLVMContext &ctx = M.getContext();
+  int32Ty = Type::getInt32Ty(ctx);
+  int8Ty = Type::getInt8Ty(ctx);
+  funcVoidTy = FunctionType::get(Type::getVoidTy(ctx), false);
+  ptrFuncVoidTy = static_cast<Type *>(funcVoidTy)->getPointerTo();
+  globalCDtorElemTy = StructType::get((Type *) int32Ty, (Type *) ptrFuncVoidTy, NULL);
+  voidPtrTy = Type::getInt8Ty(ctx)->getPointerTo();
+
+  startRoutineTy = FunctionType::get(voidPtrTy, 
+      ArrayRef<Type*>(voidPtrTy), /*isVarArg*/ false);
+  ptrStartRoutineTy = static_cast<Type *>(startRoutineTy)->getPointerTo();
+
+  Type *wrapper_tmp[] = { ptrStartRoutineTy, voidPtrTy };
+
+  shimWrapperTy = StructType::create(ArrayRef<Type*>(wrapper_tmp, 2), 
+    "PROF_shim_wrapper_t");
+  ptrShimWrapperTy = shimWrapperTy->getPointerTo();
+  voidTy = Type::getVoidTy(ctx);
+
+  sampleCallTy = FunctionType::get(voidTy, 
+      ArrayRef<Type*>(int32Ty), false);
+}
 
 void llvm::PtProfile::insertModuleInit(Module &M) {
   std::vector<Constant *> ctors;
@@ -106,23 +138,63 @@ void llvm::PtProfile::insertModuleInit(Module &M) {
   globalCtors->setInitializer(ConstantArray::get(
     cast<ArrayType>(globalCtors->getType()->getElementType()), ctors));
   DEBUG(errs() << "globalCtors is " << *globalCtors << "\n");
-
 }
 
-static void initializeTyConstants(Module &M) {
-  int32Ty = Type::getInt32Ty(M.getContext());
-  funcVoidTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
-  ptrFuncVoidTy = ((Type *)funcVoidTy)->getPointerTo();
-  globalCDtorElemTy = StructType::get((Type *) int32Ty, (Type *) ptrFuncVoidTy, NULL);
-  voidPtrTy = Type::getInt8Ty(M.getContext())->getPointerTo();
-  std::vector<Type*> startRoutineArgs;
-  startRoutineArgs.push_back(voidPtrTy);
-  startRoutineTy = FunctionType::get(voidPtrTy, startRoutineArgs, /*isVarArg*/ false);
-  ptrStartRoutineTy = ((Type *)startRoutineTy)->getPointerTo();
-  Type *wrapper_tmp[] = { ptrStartRoutineTy, voidPtrTy };
-  shimWrapperTy = StructType::create(ArrayRef<Type*>(wrapper_tmp, 2), 
-    "PROF_shim_wrapper_t");
-  ptrShimWrapperTy = shimWrapperTy->getPointerTo();
+void llvm::PtProfile::insertSampleCall(int bb_id, BasicBlock *B) {
+  if (!sampleCall) {
+    sampleCall = pM->getOrInsertFunction("PROF_IN_sample", sampleCallTy);
+  }
+  if (Instruction *insertBefore = B->getFirstNonPHI()) {
+    ConstantInt *constBBId = ConstantInt::get(int32Ty, bb_id);
+    DEBUG(errs() << "constBBId = " << *constBBId << " sampleCall " << *sampleCall << "\n");
+    CallInst::Create(sampleCall, ArrayRef<Value*>(constBBId), "", insertBefore);  
+  }
+}
+
+void llvm::PtProfile::insertBBMap(const std::vector<BasicBlock*> &bbs) {
+  // inserting this equivalent C code:
+  // char *PROF_IN_bbmap[] = { "alpha", "beta" };
+  //
+  // which is this in LLVM:
+  // @.str = private unnamed_addr constant [6 x i8] c"alpha\00", align 1
+  // @.str1 = private unnamed_addr constant [5 x i8] c"beta\00", align 1
+  // @PROF_IN_bbmap = global [2 x i8*] [i8* getelementptr inbounds ([6 x i8]* @.str, i32 0, i32 0), i8* getelementptr inbounds ([5 x i8]* @.str1, i32 0, i32 0)], align 16
+  //
+  // which is the following in C++:
+  std::vector<Constant*> gepIndices;
+  ConstantInt *zero = ConstantInt::get(int32Ty, 0);
+  gepIndices.push_back(zero);
+  gepIndices.push_back(zero);
+
+  std::vector<Constant*> bbNames;
+
+  char sprintf_buf[64];
+  for (int i = 0, sz = bbs.size(); i < sz; ++i) {
+    snprintf(sprintf_buf, 63, "%d", i);
+    Twine tName = bbs[i]->getParent()->getName() + ":" + bbs[i]->getName();
+    std::string srName(tName.str());
+    ArrayType *ty = ArrayType::get(int8Ty, srName.size() + 1);
+    GlobalVariable *v = new GlobalVariable(/*Module=*/*pM,
+      /*Type=*/ty,
+      /*isConstant=*/true,
+      /*Linkage*/GlobalValue::PrivateLinkage,
+      /*Initializer=*/ConstantArray::get(pM->getContext(), srName, true), // c string shorthand
+      /*Name=*/std::string("PROF_bb_id_") + sprintf_buf);
+    v->setAlignment(1);
+    Constant *const_ptr_v = ConstantExpr::getGetElementPtr(v, gepIndices);
+    bbNames.push_back(const_ptr_v);
+  }
+  // Null-terminate this list
+  PointerType *ptrInt8Ty = PointerType::get(int8Ty, 0);
+  bbNames.push_back(llvm::ConstantPointerNull::get(ptrInt8Ty));
+  ArrayType *BBMapTy = ArrayType::get(ptrInt8Ty, bbNames.size());
+  Constant *constBBMap = ConstantArray::get(BBMapTy, bbNames);
+  GlobalVariable *gvBBMap = new GlobalVariable(*pM,
+      BBMapTy,
+      true,
+      GlobalValue::ExternalLinkage,
+      constBBMap,
+      "PROF_IN_bbmap");
 }
 
 namespace {
@@ -165,12 +237,6 @@ namespace {
         builder.CreateStore(start_routine, wrapper_start_routine);
         builder.CreateStore(arg, wrapper_arg);
         
-        /*
-        Function *shim = shimStartRoutine(start_routine->getName(),
-            capture_start_routine,
-            call.getArgOperand(3));
-        */
-        
         // call pthread_create with shim instead of start_routine
         Constant *shim = pM->getOrInsertFunction("PROF_shim_start_routine",
             startRoutineTy);
@@ -205,7 +271,22 @@ bool llvm::PtProfile::runOnModule(Module &M) {
   PthreadCreateVisitor PtCV;
   PtCV.visit(M);
   
-  DEBUG(errs() << "Module about to finish" << "\n");
+  // Now gather all of our basic blocks
+  std::vector<BasicBlock*> bbs;
+  for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
+    for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
+      BasicBlock &pB = *B;
+      bbs.push_back(&pB);
+    }
+  }
+
+  // Store how basic block IDs map to names
+  insertBBMap(bbs);
+  // Sample in each basic block
+  for (int i = 0, sz = bbs.size(); i < sz; ++i) {
+    insertSampleCall(i, bbs[i]);
+  }
+
   return true;
 }
 
