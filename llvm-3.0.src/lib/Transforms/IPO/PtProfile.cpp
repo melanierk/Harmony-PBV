@@ -146,7 +146,6 @@ void llvm::PtProfile::insertSampleCall(int bb_id, BasicBlock *B) {
   }
   if (Instruction *insertBefore = B->getFirstNonPHI()) {
     ConstantInt *constBBId = ConstantInt::get(int32Ty, bb_id);
-    DEBUG(errs() << "constBBId = " << *constBBId << " sampleCall " << *sampleCall << "\n");
     CallInst::Create(sampleCall, ArrayRef<Value*>(constBBId), "", insertBefore);  
   }
 }
@@ -212,8 +211,9 @@ namespace {
       if (f == 0) {
         errs() << "PthreadCreateVisitor::visitCallInst saw indirect call: "
                << call << " -- make sure this is not pthread_create.\n";
+        return;
       }
-      if (f && f->getName() == "pthread_create") {
+      if (f->getName() == "pthread_create") {
         DEBUG(errs() << "PthreadCreateVisitor: " << call << "Was a call to pthread_create\n");
         ci++;
 
@@ -257,6 +257,44 @@ namespace {
       }
     }
   };
+
+  class BlockingCallVisitor : public InstVisitor<BlockingCallVisitor> {
+  private:
+    std::vector<StringRef> blockingNames;
+    Constant *preblockFn;
+    Constant *postblockFn;
+    inline bool isBlocking(Function *f) {
+      if (f == 0) { return false; }
+      std::vector<StringRef>::iterator r = 
+        std::find(blockingNames.begin(), blockingNames.end(), f->getName());
+      return r != blockingNames.end();
+    }
+
+  public:
+    BlockingCallVisitor() : InstVisitor() {
+      preblockFn = pM->getOrInsertFunction("PROF_IN_postblock", funcVoidTy);
+      postblockFn = pM->getOrInsertFunction("PROF_IN_postblock", funcVoidTy);
+      blockingNames.push_back("pthread_mutex_lock");
+      blockingNames.push_back("pthread_rwlock_wrlock");
+      blockingNames.push_back("pthread_rwlock_rdlock"); 
+      blockingNames.push_back("pthread_cond_timedwait");
+      blockingNames.push_back("pthread_cond_wait");
+      blockingNames.push_back("pthread_join");
+    }
+    void visitCallInst(CallInst &call) {
+      Function *f = call.getCalledFunction();
+      if (f == 0) {
+        errs() << "BlockingCallVisitor::visitCallInst saw indirect call: "
+               << call << " -- make sure this is not a blocking call.\n";
+        return;
+      }
+      if (isBlocking(f)) {
+        DEBUG(errs() << "Got a blocking call " << *f << "\n");
+        CallInst::Create(preblockFn)->insertBefore(&call);
+        CallInst::Create(postblockFn)->insertAfter(&call);
+      }
+    }
+  };
 }
 
 bool llvm::PtProfile::runOnModule(Module &M) {
@@ -267,7 +305,7 @@ bool llvm::PtProfile::runOnModule(Module &M) {
   // Do instrumentation
   insertModuleInit(M);
 
-  // First pass: intercept calls to pthread_create.
+  // Intercept calls to pthread_create.
   PthreadCreateVisitor PtCV;
   PtCV.visit(M);
   
@@ -286,6 +324,10 @@ bool llvm::PtProfile::runOnModule(Module &M) {
   for (int i = 0, sz = bbs.size(); i < sz; ++i) {
     insertSampleCall(i, bbs[i]);
   }
+
+  // Intercept blocking calls
+  BlockingCallVisitor BCV;
+  BCV.visit(M);
 
   return true;
 }

@@ -395,7 +395,10 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     // kt2384 -- at this point, all LTO optimizations have been applied, and
     //           IR is still valid. Add our instrumentation pass here.
     passes.add(createPtProfilePass());
-    passes.add(createPrintModulePass(&errs()));
+    // Now we've inserted function calls, inline them.
+    passes.add(createFunctionInliningPass());
+    // If any function calls were empty due to conditional compilation, kill
+    passes.add(createGlobalDCEPass());
     passes.add(createVerifierPass());
 
     FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);
