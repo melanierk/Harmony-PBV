@@ -60,6 +60,9 @@ using namespace llvm;
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
 
+static cl::opt<std::string> RTPath("rtpath",
+  cl::desc("path to runtime library (LLVM bitcode)"));
+
 
 const char* LTOCodeGenerator::getVersionString()
 {
@@ -81,6 +84,9 @@ LTOCodeGenerator::LTOCodeGenerator()
     InitializeAllTargets();
     InitializeAllTargetMCs();
     InitializeAllAsmPrinters();
+    _linker.LinkInModule(makeLTOModule(RTPath, 
+      "PTPROF:failed to create runtime module"), 
+      "PTPROF: failed to link in runtime module");
 }
 
 LTOCodeGenerator::~LTOCodeGenerator()
@@ -93,7 +99,7 @@ LTOCodeGenerator::~LTOCodeGenerator()
 
 bool LTOCodeGenerator::addModule(LTOModule* mod, std::string& errMsg)
 {
-
+  
   if(mod->getLLVVMModule()->MaterializeAllPermanently(&errMsg))
     return true;
 
