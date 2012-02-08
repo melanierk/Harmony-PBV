@@ -84,9 +84,10 @@ LTOCodeGenerator::LTOCodeGenerator()
     InitializeAllTargets();
     InitializeAllTargetMCs();
     InitializeAllAsmPrinters();
-    _linker.LinkInModule(makeLTOModule(RTPath, 
-      "PTPROF:failed to create runtime module"), 
-      "PTPROF: failed to link in runtime module");
+    std::string errMsg = "PTPROF:failed to create runtime module"; 
+    Module *pM = new Module("ptprofile_dummy", _context);
+  //  GlobalVariable gv_for_pM = new GlobalVariable(pM, 
+    _linker.LinkInModule(pM, &errMsg); 
 }
 
 LTOCodeGenerator::~LTOCodeGenerator()
