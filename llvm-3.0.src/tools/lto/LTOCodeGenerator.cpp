@@ -14,6 +14,17 @@
 
 #include "LTOModule.h"
 #include "LTOCodeGenerator.h"
+
+#include "clang/CodeGen/CodeGenAction.h"
+#include "clang/Driver/Compilation.h"
+#include "clang/Driver/Driver.h"
+#include "clang/Driver/Tool.h"
+#include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/DiagnosticOptions.h"
+#include "clang/Frontend/FrontendDiagnostic.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
+
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Linker.h"
@@ -56,6 +67,7 @@
 #include "llvm/Assembly/PrintModulePass.h"
 
 using namespace llvm;
+using namespace clang;
 
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
@@ -70,6 +82,18 @@ const char* LTOCodeGenerator::getVersionString()
 #endif
 }
 
+Module *compileCtoLLVM(StringRef path) {
+  CompilerInstance clang;
+  clang.InitializeSourceManager(path);
+  clang.createDiagnostics(0, ""); // dummy
+  CodeGenAction *act = new EmitLLVMOnlyAction();
+  if (!clang.ExecuteAction(*act)) {
+    return 0;
+  }
+  if (Module *M = act->takeModule()) {
+    return M;
+  }
+}
 
 LTOCodeGenerator::LTOCodeGenerator() 
     : _context(getGlobalContext()),
