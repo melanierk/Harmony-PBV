@@ -72,6 +72,9 @@ using namespace clang;
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
 
+static cl::opt<std::string> RTPath("rtpath",
+  cl::desc("path to runtime library (LLVM bitcode)"));
+
 
 const char* LTOCodeGenerator::getVersionString()
 {
@@ -105,6 +108,10 @@ LTOCodeGenerator::LTOCodeGenerator()
     InitializeAllTargets();
     InitializeAllTargetMCs();
     InitializeAllAsmPrinters();
+    std::string errMsg = "PTPROF:failed to create runtime module"; 
+    Module *pM = new Module("ptprofile_dummy", _context);
+  //  GlobalVariable gv_for_pM = new GlobalVariable(pM, 
+    _linker.LinkInModule(pM, &errMsg); 
 }
 
 LTOCodeGenerator::~LTOCodeGenerator()
@@ -117,7 +124,7 @@ LTOCodeGenerator::~LTOCodeGenerator()
 
 bool LTOCodeGenerator::addModule(LTOModule* mod, std::string& errMsg)
 {
-
+  
   if(mod->getLLVVMModule()->MaterializeAllPermanently(&errMsg))
     return true;
 
