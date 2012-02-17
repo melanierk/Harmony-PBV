@@ -76,6 +76,8 @@ static cl::opt<bool> DisableInline("disable-inlining",
 static cl::opt<std::string> RTPath("rtpath",
   cl::desc("path to runtime library (LLVM bitcode)"));
 
+static cl::opt<std::string> AsmPath("asmpath",
+  cl::desc("path to write assembly file for this executable"));
 
 const char* LTOCodeGenerator::getVersionString()
 {
@@ -463,6 +465,38 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
 
     codeGenPasses->doFinalization();
     delete codeGenPasses;
+
+    // Now generate asm file
+    FunctionPassManager *asmGenPasses = new FunctionPassManager(mergedModule);
+    asmGenPasses->add(new TargetData(*_target->getTargetData()));
+//    raw_fd_ostream asmFile(AsmPath.c_str(), errMsg);
+    raw_fd_ostream asmFile("/tmp/code.s", errMsg);
+    formatted_raw_ostream asmStream(asmFile);
+
+    _target->setAsmVerbosityDefault(true);
+    if (_target->addPassesToEmitFile(*asmGenPasses, asmStream,
+                                     TargetMachine::CGFT_AssemblyFile,
+                                     CodeGenOpt::Aggressive)) {
+      errMsg = "target file type not supported";
+      return true;
+    }
+
+    asmGenPasses->doInitialization();
+
+    for (Module::iterator
+           it = mergedModule->begin(), e = mergedModule->end(); it != e; ++it) {
+      if (!it->isDeclaration()) {
+        asmGenPasses->run(*it);
+      }
+    }
+    asmGenPasses->doFinalization();
+    delete asmGenPasses;
+
+    if (!errMsg.empty()) return true;
+    if (asmFile.has_error()) {
+      asmFile.clear_error();
+      return true;
+    }
 
     return false; // success
 }
