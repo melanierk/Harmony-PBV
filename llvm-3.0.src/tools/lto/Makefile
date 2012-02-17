@@ -21,7 +21,7 @@ LINK_LIBS_IN_SHARED = 1
 SHARED_LIBRARY = 1
 
 LINK_COMPONENTS := $(TARGETS_TO_BUILD) ipo scalaropts linker bitreader \
-	bitwriter mcdisassembler
+	bitwriter mcdisassembler asmparser
 
 include $(LEVEL)/Makefile.common
 

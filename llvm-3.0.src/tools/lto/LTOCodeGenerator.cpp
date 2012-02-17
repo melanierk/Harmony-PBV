@@ -51,11 +51,13 @@
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/IRReader.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/system_error.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Config/config.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -88,21 +90,6 @@ const char* LTOCodeGenerator::getVersionString()
 #endif
 }
 
-/*
-Module *compileCtoLLVM(StringRef path) {
-  CompilerInstance clang;
-  clang.InitializeSourceManager(path);
-  clang.createDiagnostics(0, ""); // dummy
-  CodeGenAction *act = new EmitLLVMOnlyAction();
-  if (!clang.ExecuteAction(*act)) {
-    return 0;
-  }
-  if (Module *M = act->takeModule()) {
-    return M;
-  }
-}
-*/
-
 LTOCodeGenerator::LTOCodeGenerator() 
     : _context(getGlobalContext()),
       _linker("LinkTimeOptimizer", "ld-temp.o", _context), _target(NULL),
@@ -113,10 +100,7 @@ LTOCodeGenerator::LTOCodeGenerator()
     InitializeAllTargets();
     InitializeAllTargetMCs();
     InitializeAllAsmPrinters();
-    std::string errMsg = "PTPROF:failed to create runtime module"; 
-    Module *pM = new Module("ptprofile_dummy", _context);
-  //  GlobalVariable gv_for_pM = new GlobalVariable(pM, 
-    _linker.LinkInModule(pM, &errMsg); 
+
 }
 
 LTOCodeGenerator::~LTOCodeGenerator()
@@ -431,13 +415,32 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     // kt2384 -- at this point, all LTO optimizations have been applied, and
     //           IR is still valid. Add our instrumentation pass here.
     passes.add(createPtProfilePass());
-    // Now we've inserted function calls, inline them.
-    passes.add(createFunctionInliningPass());
-    // If any function calls were empty due to conditional compilation, kill
-    passes.add(createGlobalDCEPass());
     passes.add(createVerifierPass());
+    // Run our queue of passes all at once now, efficiently.
+    passes.run(*mergedModule);
 
     errs() << "In LTOCodeGenerator.cpp, all instrumentation passes have been run.\n";
+
+    // Now link in the runtime
+    std::string rt_path = "/tmp/nothing.bc";
+    SMDiagnostic diag;
+    Module *RTLib = ParseIRFile(rt_path, diag, _context);
+    if (!diag.getMessage().empty()) {
+      errs() << "ERROR parsing IR file: " << diag.getMessage() << "\n";
+      return true;
+    }
+    
+    Linker::LinkModules(mergedModule, RTLib, 0, &errMsg);
+    if (!errMsg.empty()) {
+      errs() << errMsg << "\n";
+      return true;
+    }
+    PassManager secondPasses;
+    // Now we've inserted function calls, inline them.
+    secondPasses.add(createFunctionInliningPass());
+    // If any function calls were empty due to conditional compilation, kill
+    passes.add(createGlobalDCEPass());
+    secondPasses.run(*mergedModule);
 
     FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);
 
@@ -451,10 +454,6 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
       errMsg = "target file type not supported";
       return true;
     }
-
-    // Run our queue of passes all at once now, efficiently.
-    passes.run(*mergedModule);
-
     // Run the code generator, and write assembly file
     codeGenPasses->doInitialization();
 
