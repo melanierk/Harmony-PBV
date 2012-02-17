@@ -45,6 +45,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SystemUtils.h"
@@ -85,6 +86,7 @@ const char* LTOCodeGenerator::getVersionString()
 #endif
 }
 
+/*
 Module *compileCtoLLVM(StringRef path) {
   CompilerInstance clang;
   clang.InitializeSourceManager(path);
@@ -97,6 +99,7 @@ Module *compileCtoLLVM(StringRef path) {
     return M;
   }
 }
+*/
 
 LTOCodeGenerator::LTOCodeGenerator() 
     : _context(getGlobalContext()),
@@ -431,6 +434,8 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     // If any function calls were empty due to conditional compilation, kill
     passes.add(createGlobalDCEPass());
     passes.add(createVerifierPass());
+
+    errs() << "In LTOCodeGenerator.cpp, all instrumentation passes have been run.\n";
 
     FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);
 

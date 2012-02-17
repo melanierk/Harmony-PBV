@@ -10,10 +10,14 @@
 LEVEL := ..
 
 # Build clang if present.
-OPTIONAL_PARALLEL_DIRS := clang
+#
+#	clang must be built BEFORE lto.
+#
+# OPTIONAL_PARALLEL_DIRS := clang
 
 # Build LLDB if present. Note LLDB must be built last as it depends on the
 # wider LLVM infrastructure (including Clang).
+#
 OPTIONAL_DIRS := lldb
 
 # NOTE: The tools are organized into five groups of four consisting of one
@@ -45,11 +49,13 @@ ifndef ONLY_TOOLS
 ifeq ($(ENABLE_PIC),1)
   # gold only builds if binutils is around.  It requires "lto" to build before
   # it so it is added to DIRS.
-  ifdef BINUTILS_INCDIR
-    DIRS += lto gold
-  else
-    PARALLEL_DIRS += lto
-  endif
+	#
+	# kt2384 -- lto now depends on clang, so build last
+#  ifdef BINUTILS_INCDIR
+    DIRS += clang lto gold
+#  else
+#    PARALLEL_DIRS += lto
+#  endif
 
   PARALLEL_DIRS += bugpoint-passes
 

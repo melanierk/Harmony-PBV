@@ -7,6 +7,14 @@ struct PROF_wrapper_t {
   void *arg;
 };
 
+void PROF_IN_preblock() {
+  fprintf(stderr, "** PROF_IN_preblock **");
+}
+
+void PROF_IN_postblock() {
+  fprintf(stderr, "** PROF_IN_postblock **");
+}
+
 void PROF_IN_init_module() {
   fprintf(stderr, "** PROF_IN_init_module **\n");
   char **p;

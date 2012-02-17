@@ -29,6 +29,9 @@ ifdef LLVM_VERSION_INFO
 CXX.Flags += -DLLVM_VERSION_INFO='"$(LLVM_VERSION_INFO)"'
 endif
 
+# kt2384: add clang includes (we invoke clang compiler here)
+CXX.Flags += -I$(LLVM_OBJ_ROOT)/tools/clang/include -I$(LLVM_SRC_ROOT)/tools/clang/include
+
 ifeq ($(HOST_OS),Darwin)
     # Special hack to allow libLTO to have an offset version number.
     ifdef LLVM_LTO_VERSION_OFFSET
