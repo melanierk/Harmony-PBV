@@ -17,6 +17,12 @@
 extern char *PROF_bbmap[];
 extern const int PROF_nbbs;
 
+// Size calculations, in terms of uint32_t
+// Everything defined in terms of PROF_nbbs and PROF_MAX_THREADS
+#define PER_THREADCOUNT_N PROF_nbbs
+#define PER_THREAD_N (PROF_MAX_THREADS * PER_THREADCOUNT_N)
+#define PROFILE_N (PROF_MAX_THREADS * PER_THREAD_N)
+
 // Atexit handlers
 static pthread_key_t k_thread_exit;
 
@@ -29,8 +35,8 @@ typedef volatile uint32_t atomic_uint32_t __attribute ((aligned(8)));
 static atomic_ptr_uint32_t PROF_curr_thread_hist;
 static atomic_uint32_t PROF_n_offset;
 
-#define PROF_INC_OFFSET() __sync_add_and_fetch(&PROF_n_offset, PROF_nbbs)
-#define PROF_DEC_OFFSET() __sync_sub_and_fetch(&PROF_n_offset, PROF_nbbs)
+#define PROF_INC_OFFSET() __sync_add_and_fetch(&PROF_n_offset, PER_THREADCOUNT_N)
+#define PROF_DEC_OFFSET() __sync_sub_and_fetch(&PROF_n_offset, PER_THREADCOUNT_N)
 
 struct PROF_wrapper_t {
   void *(*start_routine)(void*);
@@ -43,19 +49,21 @@ static struct tm start_time;
 // Atexit handler functions
 static void handle_thread_exit(void *p) {
   PROF_DEC_OFFSET();
+  __sync_sub_and_fetch(&PROF_curr_thread_hist,
+      (atomic_uint32_t) PER_THREAD_N);
 }
 
 // ====================
 // WRITING OUT TO FILE
 // ====================
 static void merge_hists() {
-  int bb_id, t;
-  for (bb_id = 0; bb_id < PROF_nbbs; bb_id++) {
-    register int accum = 0;
-    for (t = 1; t < PROF_MAX_THREADS; t++) {
-      accum += PROF_hist[t*PROF_nbbs + bb_id];
+  int i, t;
+  uint32_t *curr_hist;
+  for (t = 1; t < PROF_MAX_THREADS; t++) {
+    curr_hist = PROF_bbmap + t*PER_THREAD_N;
+    for (i = 0; i < PER_THREAD_N; i++) {
+      PROF_hist[i] += curr_hist[i];
     }
-    PROF_hist[bb_id] += accum;
   }
 }
 
@@ -88,8 +96,8 @@ static FILE *out_file(const char *basename) {
 // 0-3   | uint32    | nbbs
 // 4-7   | uint32    | nthreads
 // 8-11  | uint32    | type of profile (0 = active; 1 = working)
-// 12-n  | uint32[]  | data, where n = 12 + 4*nbbs*nthreads
-// n+1-  | char      | basic block names, null-terminated
+// 12-n  | uint32[]  | data, where n = 12 + 4*PROFILE_N
+// n+1-  | char      | basic block names; each string is null-terminated
 
 static void write_histogram() {
   // Merge histograms before writing
@@ -112,7 +120,7 @@ static void write_histogram() {
   fwrite(&PROF_nbbs, 4, 1, f);
   fwrite(&nthreads,  4, 1, f);
   fwrite(&type,      4, 1, f);
-  fwrite(PROF_hist,  4, PROF_nbbs * PROF_MAX_THREADS, f);
+  fwrite(PROF_hist,  4, PROFILE_N, f);
   char **p = PROF_bbmap;
   while (*p) {
     fputs(*p, f);
@@ -122,21 +130,21 @@ static void write_histogram() {
   DIE_NZ(fclose(f));
 }
 
+// ============================ 
+// INSTRUMENTATION ENTRY POINTS 
 // ============================
-// INSTRUMENTATION ENTRY POINTS
-// ============================
-void PROF_preblock() {
-#ifdef PROF_W
-  PROF_DEC_OFFSET();
+ void PROF_preblock() {
+#ifdef PROF_W 
+   PROF_DEC_OFFSET();
 #endif
 }
 
-void PROF_postblock() {
+void PROF_postblock() { 
 #ifdef PROF_W
-  PROF_DEC_OFFSET();
+  PROF_DEC_OFFSET(); 
 #endif
-}
-      
+} 
+
 // forward declaration
 void PROF_init_thread();
 
@@ -148,10 +156,10 @@ void PROF_init_module() {
   DIE_NZ(atexit(write_histogram));
 
   // Set up the histograms
-  PROF_hist = calloc(PROF_nbbs * PROF_MAX_THREADS, sizeof(uint32_t));
+  PROF_hist = calloc(PROFILE_N, sizeof(uint32_t));
   DIE_NULL(PROF_hist);
   // Each thread initialization does add_and_fetch, so we start at index "-1".
-  PROF_curr_thread_hist = PROF_hist - PROF_nbbs;
+  PROF_curr_thread_hist = PROF_hist - PER_THREAD_N;
   PROF_n_offset = 0;
   
   // Handle thread-specific stuff
@@ -165,7 +173,8 @@ void PROF_init_thread() {
   // Set the k_thread_exit to a dummy value (which we'll never use)
   // TODO: wraparound!
   DIE_NZ(pthread_setspecific(k_thread_exit, (void *) 1));
-  PROF_thread_hist = __sync_add_and_fetch(&PROF_curr_thread_hist, (atomic_uint32_t)(4 * PROF_nbbs));
+  PROF_thread_hist = __sync_add_and_fetch(&PROF_curr_thread_hist,
+      (atomic_uint32_t) PER_THREAD_N);
 }
 
 void *PROF_shim_start_routine(void *wrapped_arg) {

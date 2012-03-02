@@ -123,7 +123,7 @@ void llvm::PtProfile::insertModuleInit(Module &M) {
   }
 
   // Get the module initializer function and add it as the lowest priority
-  Constant *moduleInitFn = M.getOrInsertFunction("PROF_IN_init_module", funcVoidTy);
+  Constant *moduleInitFn = M.getOrInsertFunction("PROF_init_module", funcVoidTy);
   ctors.push_back(ConstantStruct::get(
         globalCDtorElemTy,
         ConstantInt::get(int32Ty, 0),
@@ -141,23 +141,19 @@ void llvm::PtProfile::insertModuleInit(Module &M) {
 }
 
 void llvm::PtProfile::insertSampleCall(int bb_id, BasicBlock *B) {
-  if (!sampleCall) {
-    sampleCall = pM->getOrInsertFunction("PROF_IN_sample", sampleCallTy);
-  }
-  if (Instruction *insertBefore = B->getFirstNonPHI()) {
-    ConstantInt *constBBId = ConstantInt::get(int32Ty, bb_id);
-    CallInst::Create(sampleCall, ArrayRef<Value*>(constBBId), "", insertBefore);  
-  }
+  BasicBlock::iterator insertPoint = B->getFirstInsertionPt();
+  ConstantInt *constBBId = ConstantInt::get(int32Ty, bb_id);
+  CallInst::Create(sampleCall, ArrayRef<Value*>(constBBId), "", insertPoint);
 }
 
 void llvm::PtProfile::insertBBMap(const std::vector<BasicBlock*> &bbs) {
   // inserting this equivalent C code:
-  // char *PROF_IN_bbmap[] = { "alpha", "beta" };
+  // char *PROF_bbmap[] = { "alpha", "beta" };
   //
   // which is this in LLVM:
   // @.str = private unnamed_addr constant [6 x i8] c"alpha\00", align 1
   // @.str1 = private unnamed_addr constant [5 x i8] c"beta\00", align 1
-  // @PROF_IN_bbmap = global [2 x i8*] [i8* getelementptr inbounds ([6 x i8]* @.str, i32 0, i32 0), i8* getelementptr inbounds ([5 x i8]* @.str1, i32 0, i32 0)], align 16
+  // @PROF_bbmap = global [2 x i8*] [i8* getelementptr inbounds ([6 x i8]* @.str, i32 0, i32 0), i8* getelementptr inbounds ([5 x i8]* @.str1, i32 0, i32 0)], align 16
   //
   // which is the following in C++:
   std::vector<Constant*> gepIndices;
@@ -193,7 +189,15 @@ void llvm::PtProfile::insertBBMap(const std::vector<BasicBlock*> &bbs) {
       true,
       GlobalValue::ExternalLinkage,
       constBBMap,
-      "PROF_IN_bbmap");
+      "PROF_bbmap");
+
+  // Also add a counter
+  GlobalVariable *gvNbbs = new GlobalVariable(*pM,
+      int32Ty,
+      true,
+      GlobalValue::ExternalLinkage,
+      ConstantInt::get(int32Ty, bbNames.size()),
+      "PROF_nbbs");
 }
 
 namespace {
@@ -205,7 +209,7 @@ namespace {
 
   public:
     PthreadCreateVisitor() : InstVisitor(), ci(0), builder(pM->getContext()),
-      threadInitFn(pM->getOrInsertFunction("PROF_IN_init_thread", funcVoidTy)) { }
+      threadInitFn(pM->getOrInsertFunction("PROF_init_thread", funcVoidTy)) { }
     void visitCallInst(CallInst &call) {
       Function *f = call.getCalledFunction();
       if (f == 0) {
@@ -247,7 +251,7 @@ namespace {
                             newArg};
         CallInst *newCall = CallInst::Create(call.getCalledValue(),
                                              ArrayRef<Value*>(newArgs, 4),
-                                             Twine("PROF_IN_patched_call"),
+                                             Twine("PROF_patched_call"),
                                              &call);
         DEBUG(errs() << "old call was " << call << "\n");
         DEBUG(errs() << "newCall is   " << *newCall << "\n");
@@ -272,8 +276,8 @@ namespace {
 
   public:
     BlockingCallVisitor() : InstVisitor() {
-      preblockFn = pM->getOrInsertFunction("PROF_IN_postblock", funcVoidTy);
-      postblockFn = pM->getOrInsertFunction("PROF_IN_postblock", funcVoidTy);
+      preblockFn = pM->getOrInsertFunction("PROF_postblock", funcVoidTy);
+      postblockFn = pM->getOrInsertFunction("PROF_postblock", funcVoidTy);
       blockingNames.push_back("pthread_mutex_lock");
       blockingNames.push_back("pthread_rwlock_wrlock");
       blockingNames.push_back("pthread_rwlock_rdlock"); 
@@ -321,6 +325,7 @@ bool llvm::PtProfile::runOnModule(Module &M) {
   // Store how basic block IDs map to names
   insertBBMap(bbs);
   // Sample in each basic block
+  sampleCall = pM->getOrInsertFunction("PROF_sample", sampleCallTy);
   for (int i = 0, sz = bbs.size(); i < sz; ++i) {
     insertSampleCall(i, bbs[i]);
   }

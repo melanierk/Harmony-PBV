@@ -419,6 +419,8 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     // Run our queue of passes all at once now, efficiently.
     passes.run(*mergedModule);
 
+    errs() << "In LTOCodeGenerator.cpp, DisableInline = " << DisableInline 
+           << ", RTPath = " << RTPath << " asmpath = " << AsmPath << "\n";
     errs() << "In LTOCodeGenerator.cpp, all instrumentation passes have been run.\n";
 
     // Now link in the runtime
