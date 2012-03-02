@@ -15,16 +15,6 @@
 #include "LTOModule.h"
 #include "LTOCodeGenerator.h"
 
-#include "clang/CodeGen/CodeGenAction.h"
-#include "clang/Driver/Compilation.h"
-#include "clang/Driver/Driver.h"
-#include "clang/Driver/Tool.h"
-#include "clang/Frontend/CompilerInvocation.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/DiagnosticOptions.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
-#include "clang/Frontend/TextDiagnosticPrinter.h"
-
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Linker.h"
@@ -47,6 +37,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -62,24 +53,23 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/PtProfile/PtProfile.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include <cstdlib>
 #include <unistd.h>
-#include <fcntl.h>
+#include <algorithm>
+#include <sys/time.h>
+#include <time.h>
 
 // for LTO instrumentation
 #include "llvm/Assembly/PrintModulePass.h"
 
 using namespace llvm;
-using namespace clang;
 
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
 
 static cl::opt<std::string> RTPath("rtpath",
-  cl::desc("path to runtime library (LLVM bitcode)"));
-
-static cl::opt<std::string> AsmPath("asmpath",
-  cl::desc("path to write assembly file for this executable"));
+  cl::desc("PtProfile: enable runtime profiling, using library on this path"));
 
 const char* LTOCodeGenerator::getVersionString()
 {
@@ -382,6 +372,32 @@ void LTOCodeGenerator::applyScopeRestrictions() {
   _scopeRestrictionsDone = true;
 }
 
+// Helper functions
+static std::string getAsmPath() {
+#define OUTPATH_LEN 512
+  /*
+  SmallVectorImpl<char> cwd(OUTPATH_LEN);
+  if (errc::success != sys::fs::current_path(cwd)) {
+    return "";
+  }
+  std::copy(cwd.begin(), cwd.end(), std::back_inserter(sPath));
+  */
+  std::string sPath;
+  
+  // get time
+  time_t now = time(NULL);
+  struct tm now_time;
+#define DATE_LEN 16
+  if (NULL == localtime_r(&now, &now_time)) {
+    return 0;
+  }
+  char datebuf[DATE_LEN];
+  strftime(datebuf, DATE_LEN, "%m-%d_%H:%M:%S", &now_time);
+  sPath.append("ptprofile_uninstrumented_").append(datebuf).append(".s");
+  errs() << "LTOCodeGenerator.cpp DEBUG: asm will be written to " << sPath << "\n";
+  return sPath; 
+}
+
 /// Optimize merged modules using various IPO passes
 bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
                                           std::string &errMsg) {
@@ -409,40 +425,44 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     
     PassManagerBuilder().populateLTOPassManager(passes, /*Internalize=*/ false,
                                                 !DisableInline);
-
     // Make sure everything is still good.
-    passes.add(createVerifierPass());
-    // kt2384 -- at this point, all LTO optimizations have been applied, and
-    //           IR is still valid. Add our instrumentation pass here.
-    passes.add(createPtProfilePass());
     passes.add(createVerifierPass());
     // Run our queue of passes all at once now, efficiently.
     passes.run(*mergedModule);
+    Module *uninstrumentedModule;
 
-    errs() << "In LTOCodeGenerator.cpp, DisableInline = " << DisableInline 
-           << ", RTPath = " << RTPath << " asmpath = " << AsmPath << "\n";
-    errs() << "In LTOCodeGenerator.cpp, all instrumentation passes have been run.\n";
+    if (!RTPath.empty()) {
+      // Save the uninstrumented module for generating .s
+      uninstrumentedModule = CloneModule(mergedModule);
+      // kt2384 -- at this point, all LTO optimizations have been applied, and
+      //           IR is still valid. Add our instrumentation pass here.
 
-    // Now link in the runtime
-    std::string rt_path = "/tmp/nothing.bc";
-    SMDiagnostic diag;
-    Module *RTLib = ParseIRFile(rt_path, diag, _context);
-    if (!diag.getMessage().empty()) {
-      errs() << "ERROR parsing IR file: " << diag.getMessage() << "\n";
-      return true;
+      PassManager secondPasses;
+      secondPasses.add(createPtProfilePass());
+      secondPasses.add(createVerifierPass());
+      // Run our queue of secondPasses all at once now, efficiently.
+      secondPasses.run(*mergedModule);
+
+      // Now link in the runtime
+      SMDiagnostic diag;
+      Module *RTLib = ParseIRFile(RTPath, diag, _context);
+      if (!diag.getMessage().empty()) {
+        errs() << "ERROR parsing IR file: " << diag.getMessage() << "\n";
+        return true;
+      }
+      
+      Linker::LinkModules(mergedModule, RTLib, 0, &errMsg);
+      if (!errMsg.empty()) {
+        errs() << errMsg << "\n";
+        return true;
+      }
+      PassManager thirdPasses;
+      // Now we've inserted function calls, inline them.
+      thirdPasses.add(createFunctionInliningPass());
+      // If any function calls were empty due to conditional compilation, kill
+      thirdPasses.add(createGlobalDCEPass());
+      thirdPasses.run(*mergedModule);
     }
-    
-    Linker::LinkModules(mergedModule, RTLib, 0, &errMsg);
-    if (!errMsg.empty()) {
-      errs() << errMsg << "\n";
-      return true;
-    }
-    PassManager secondPasses;
-    // Now we've inserted function calls, inline them.
-    secondPasses.add(createFunctionInliningPass());
-    // If any function calls were empty due to conditional compilation, kill
-    passes.add(createGlobalDCEPass());
-    secondPasses.run(*mergedModule);
 
     FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);
 
@@ -467,36 +487,37 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     codeGenPasses->doFinalization();
     delete codeGenPasses;
 
-    // Now generate asm file
-    FunctionPassManager *asmGenPasses = new FunctionPassManager(mergedModule);
-    asmGenPasses->add(new TargetData(*_target->getTargetData()));
-//    raw_fd_ostream asmFile(AsmPath.c_str(), errMsg);
-    raw_fd_ostream asmFile("/tmp/code.s", errMsg);
-    formatted_raw_ostream asmStream(asmFile);
+    if (uninstrumentedModule) {
+      // Now generate asm file
+      FunctionPassManager *asmGenPasses = new FunctionPassManager(uninstrumentedModule);
+      asmGenPasses->add(new TargetData(*_target->getTargetData()));
+      raw_fd_ostream asmFile(getAsmPath().c_str(), errMsg);
+      formatted_raw_ostream asmStream(asmFile);
 
-    _target->setAsmVerbosityDefault(true);
-    if (_target->addPassesToEmitFile(*asmGenPasses, asmStream,
-                                     TargetMachine::CGFT_AssemblyFile,
-                                     CodeGenOpt::Aggressive)) {
-      errMsg = "target file type not supported";
-      return true;
-    }
-
-    asmGenPasses->doInitialization();
-
-    for (Module::iterator
-           it = mergedModule->begin(), e = mergedModule->end(); it != e; ++it) {
-      if (!it->isDeclaration()) {
-        asmGenPasses->run(*it);
+      _target->setAsmVerbosityDefault(true);
+      if (_target->addPassesToEmitFile(*asmGenPasses, asmStream,
+                                       TargetMachine::CGFT_AssemblyFile,
+                                       CodeGenOpt::Aggressive)) {
+        errMsg = "target file type not supported";
+        return true;
       }
-    }
-    asmGenPasses->doFinalization();
-    delete asmGenPasses;
 
-    if (!errMsg.empty()) return true;
-    if (asmFile.has_error()) {
-      asmFile.clear_error();
-      return true;
+      asmGenPasses->doInitialization();
+
+      for (Module::iterator
+             it = uninstrumentedModule->begin(), e = uninstrumentedModule->end(); it != e; ++it) {
+        if (!it->isDeclaration()) {
+          asmGenPasses->run(*it);
+        }
+      }
+      asmGenPasses->doFinalization();
+      delete asmGenPasses;
+
+      if (!errMsg.empty()) return true;
+      if (asmFile.has_error()) {
+        asmFile.clear_error();
+        return true;
+      }
     }
 
     return false; // success
