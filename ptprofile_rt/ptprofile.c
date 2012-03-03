@@ -99,7 +99,7 @@ static FILE *out_file(const char *basename) {
 // 0-3   | uint32    | nbbs
 // 4-7   | uint32    | nthreads
 // 8-11  | uint32    | type of profile (0 = active; 1 = working)
-// 12-n  | uint32[]  | data, where n = 12 + 4*PROFILE_N
+// 12-n  | uint32[]  | data, where n = 12 + 4*PER_THREAD_N
 // n+1-  | char      | basic block names; each string is null-terminated
 
 static void write_histogram() {
@@ -123,7 +123,7 @@ static void write_histogram() {
   fwrite(&PROF_nbbs, 4, 1, f);
   fwrite(&nthreads,  4, 1, f);
   fwrite(&type,      4, 1, f);
-  fwrite(PROF_hist,  4, PROFILE_N, f);
+  fwrite(PROF_hist,  4, PER_THREAD_N, f);
   char **p = PROF_bbmap;
   while (*p) {
     fputs(*p, f);
@@ -162,13 +162,12 @@ void PROF_init_module() {
   PROF_hist = calloc(PROFILE_N, sizeof(uint32_t));
   DIE_NULL(PROF_hist);
   // Each thread initialization does add_and_fetch, so we start at index "-1".
-  PROF_curr_thread_hist = PROF_hist - PER_THREAD_N;
+  PROF_curr_thread_hist = PROF_hist;
   PROF_n_offset = 0;
+  PROF_thread_hist = PROF_hist;
   
   // Handle thread-specific stuff
   DIE_NZ(pthread_key_create(&k_thread_exit, handle_thread_exit));
-  // We're a thread too!
-  PROF_init_thread();
 }
 
 void PROF_init_thread() {
