@@ -213,8 +213,8 @@ namespace {
     void visitCallInst(CallInst &call) {
       Function *f = call.getCalledFunction();
       if (f == 0) {
-        errs() << "PthreadCreateVisitor::visitCallInst saw indirect call: "
-               << call << " -- make sure this is not pthread_create.\n";
+        DEBUG(errs() << "PthreadCreateVisitor::visitCallInst saw indirect call: "
+                     << call << " -- make sure this is not pthread_create.\n");
         return;
       }
       if (f->getName() == "pthread_create") {
@@ -255,6 +255,7 @@ namespace {
                                              &call);
         DEBUG(errs() << "old call was " << call << "\n");
         DEBUG(errs() << "newCall is   " << *newCall << "\n");
+        call.replaceAllUsesWith(newCall);
         call.eraseFromParent();
         DEBUG(errs() << "erased from parent" << "\n");
         // TODO: make the shim
@@ -288,8 +289,8 @@ namespace {
     void visitCallInst(CallInst &call) {
       Function *f = call.getCalledFunction();
       if (f == 0) {
-        errs() << "BlockingCallVisitor::visitCallInst saw indirect call: "
-               << call << " -- make sure this is not a blocking call.\n";
+        DEBUG(errs() << "BlockingCallVisitor::visitCallInst saw indirect call: "
+                     << call << " -- make sure this is not a blocking call.\n");
         return;
       }
       if (isBlocking(f)) {

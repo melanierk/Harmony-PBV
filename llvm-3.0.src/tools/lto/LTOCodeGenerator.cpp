@@ -71,6 +71,9 @@ static cl::opt<bool> DisableInline("disable-inlining",
 static cl::opt<std::string> RTPath("rtpath",
   cl::desc("PtProfile: enable runtime profiling, using library on this path"));
 
+static cl::opt<std::string> AsmPath("asmpath",
+  cl::desc("PtProfile: base path to place assembly file output"));
+
 const char* LTOCodeGenerator::getVersionString()
 {
 #ifdef LLVM_VERSION_INFO
@@ -382,7 +385,7 @@ static std::string getAsmPath() {
   }
   std::copy(cwd.begin(), cwd.end(), std::back_inserter(sPath));
   */
-  std::string sPath;
+  std::string sPath(AsmPath);
   
   // get time
   time_t now = time(NULL);
@@ -429,9 +432,11 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
     passes.add(createVerifierPass());
     // Run our queue of passes all at once now, efficiently.
     passes.run(*mergedModule);
-    Module *uninstrumentedModule;
+    Module *uninstrumentedModule = NULL;
 
     if (!RTPath.empty()) {
+      assert(mergedModule->getFunction("main"));
+      errs() << "LTOCodeGenerator: Instrumenting with " << RTPath << "\n";
       // Save the uninstrumented module for generating .s
       uninstrumentedModule = CloneModule(mergedModule);
       // kt2384 -- at this point, all LTO optimizations have been applied, and

@@ -1,0 +1,10 @@
+export CC=gcc
+export CXX=g++
+
+mkdir build_release
+pushd build_release
+rm -rf *
+../llvm-3.0.src/configure --enable-optimized --with-binutils-include=/usr/include --disable-docs
+make -j 5
+popd
+

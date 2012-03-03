@@ -1,0 +1,4 @@
+export LLVM_BUILDDIR=build
+export LLVM_CONFIG=Debug+Asserts
+
+. ./setup.common

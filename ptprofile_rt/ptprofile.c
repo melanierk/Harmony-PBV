@@ -30,13 +30,17 @@ static pthread_key_t k_thread_exit;
 static uint32_t *PROF_hist;
  __thread static uint32_t *PROF_thread_hist;
 
-typedef volatile uint32_t* atomic_ptr_uint32_t __attribute__ ((aligned(8)));
+// volatile pointer to nonvolatile
+typedef uint32_t * volatile atomic_ptr_uint32_t __attribute__ ((aligned(8)));
 typedef volatile uint32_t atomic_uint32_t __attribute ((aligned(8)));
 static atomic_ptr_uint32_t PROF_curr_thread_hist;
 static atomic_uint32_t PROF_n_offset;
 
 #define PROF_INC_OFFSET() __sync_add_and_fetch(&PROF_n_offset, PER_THREADCOUNT_N)
 #define PROF_DEC_OFFSET() __sync_sub_and_fetch(&PROF_n_offset, PER_THREADCOUNT_N)
+
+#define PROF_INC_CURR() __sync_add_and_fetch(&PROF_curr_thread_hist, (atomic_ptr_uint32_t)(sizeof(uint32_t) * PER_THREAD_N))
+#define PROF_DEC_CURR() __sync_add_and_fetch(&PROF_curr_thread_hist, (atomic_ptr_uint32_t)(sizeof(uint32_t) * PER_THREAD_N))
 
 struct PROF_wrapper_t {
   void *(*start_routine)(void*);
@@ -49,8 +53,7 @@ static struct tm start_time;
 // Atexit handler functions
 static void handle_thread_exit(void *p) {
   PROF_DEC_OFFSET();
-  __sync_sub_and_fetch(&PROF_curr_thread_hist,
-      (atomic_uint32_t) PER_THREAD_N);
+  PROF_DEC_CURR();
 }
 
 // ====================
@@ -60,7 +63,7 @@ static void merge_hists() {
   int i, t;
   uint32_t *curr_hist;
   for (t = 1; t < PROF_MAX_THREADS; t++) {
-    curr_hist = PROF_bbmap + t*PER_THREAD_N;
+    curr_hist = PROF_hist + t*PER_THREAD_N;
     for (i = 0; i < PER_THREAD_N; i++) {
       PROF_hist[i] += curr_hist[i];
     }
@@ -173,8 +176,7 @@ void PROF_init_thread() {
   // Set the k_thread_exit to a dummy value (which we'll never use)
   // TODO: wraparound!
   DIE_NZ(pthread_setspecific(k_thread_exit, (void *) 1));
-  PROF_thread_hist = __sync_add_and_fetch(&PROF_curr_thread_hist,
-      (atomic_uint32_t) PER_THREAD_N);
+  PROF_thread_hist = PROF_INC_CURR();
 }
 
 void *PROF_shim_start_routine(void *wrapped_arg) {

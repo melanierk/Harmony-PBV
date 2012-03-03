@@ -5,10 +5,8 @@ if [ ! -d build ]; then
   mkdir build
 fi
 
-export LLVM_CONFIG=Debug+Asserts
-
 CYGROOT=$PWD
-export PATH=$PATH:$CYGROOT/build/$LLVM_CONFIG/bin
+export PATH=$PATH:$CYGROOT/$LLVM_BUILDDIR/$LLVM_CONFIG/bin
 #export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CYGROOT/build/$LLVM_CONFIG/lib
 export LDFLAGS="$LDFLAGS -L$CYGROOT/build/$LLVM_CONFIG/lib"
 

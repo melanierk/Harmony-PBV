@@ -1,0 +1,4 @@
+export LLVM_BUILDDIR=build_release
+export LLVM_CONFIG=Release
+
+. ./setup.common

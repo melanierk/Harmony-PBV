@@ -1,3 +1,8 @@
+# build these with gcc
+
+export CC=gcc
+export CXX=g++
+
 mkdir build
 pushd build
 rm -rf *
