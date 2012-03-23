@@ -4,8 +4,15 @@
 *.ll
 a.out
 
+# Assembly is almost always intermediate file
+*.s
+# data files
+*.out
+*.swp
+
 # Builds
 build/*
+build_release/*
 
 # OS Files
 .DS_Store*
