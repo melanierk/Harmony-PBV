@@ -285,6 +285,7 @@ namespace {
       blockingNames.push_back("pthread_cond_timedwait");
       blockingNames.push_back("pthread_cond_wait");
       blockingNames.push_back("pthread_join");
+      blockingNames.push_back("pthread_barrier_wait");
     }
     void visitCallInst(CallInst &call) {
       Function *f = call.getCalledFunction();
@@ -325,7 +326,7 @@ bool llvm::PtProfile::runOnModule(Module &M) {
 
   // Store how basic block IDs map to names
   insertBBMap(bbs);
-  // Sample in each basic block
+  // Insert sampling call into each basic block
   sampleCall = pM->getOrInsertFunction("PROF_sample", sampleCallTy);
   for (int i = 0, sz = bbs.size(); i < sz; ++i) {
     insertSampleCall(i, bbs[i]);
@@ -337,5 +338,4 @@ bool llvm::PtProfile::runOnModule(Module &M) {
 
   return true;
 }
-
 

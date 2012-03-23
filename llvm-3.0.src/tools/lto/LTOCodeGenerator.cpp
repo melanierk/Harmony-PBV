@@ -110,6 +110,8 @@ bool LTOCodeGenerator::addModule(LTOModule* mod, std::string& errMsg)
   if(mod->getLLVVMModule()->MaterializeAllPermanently(&errMsg))
     return true;
 
+  errs() << "M";
+
   bool ret = _linker.LinkInModule(mod->getLLVVMModule(), &errMsg);
 
   const std::vector<const char*> &undefs = mod->getAsmUndefinedRefs();
@@ -378,13 +380,6 @@ void LTOCodeGenerator::applyScopeRestrictions() {
 // Helper functions
 static std::string getAsmPath() {
 #define OUTPATH_LEN 512
-  /*
-  SmallVectorImpl<char> cwd(OUTPATH_LEN);
-  if (errc::success != sys::fs::current_path(cwd)) {
-    return "";
-  }
-  std::copy(cwd.begin(), cwd.end(), std::back_inserter(sPath));
-  */
   std::string sPath(AsmPath);
   
   // get time
@@ -447,6 +442,8 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
       secondPasses.add(createVerifierPass());
       // Run our queue of secondPasses all at once now, efficiently.
       secondPasses.run(*mergedModule);
+
+      assert(mergedModule->getNamedGlobal("llvm.global_ctors") || "llvm.global_ctors not inserted!");
 
       // Now link in the runtime
       SMDiagnostic diag;

@@ -40,7 +40,7 @@ static atomic_uint32_t PROF_n_offset;
 #define PROF_DEC_OFFSET() __sync_sub_and_fetch(&PROF_n_offset, PER_THREADCOUNT_N)
 
 #define PROF_INC_CURR() __sync_add_and_fetch(&PROF_curr_thread_hist, (atomic_ptr_uint32_t)(sizeof(uint32_t) * PER_THREAD_N))
-#define PROF_DEC_CURR() __sync_add_and_fetch(&PROF_curr_thread_hist, (atomic_ptr_uint32_t)(sizeof(uint32_t) * PER_THREAD_N))
+#define PROF_DEC_CURR() __sync_sub_and_fetch(&PROF_curr_thread_hist, (atomic_ptr_uint32_t)(sizeof(uint32_t) * PER_THREAD_N))
 
 struct PROF_wrapper_t {
   void *(*start_routine)(void*);
@@ -148,9 +148,6 @@ void PROF_postblock() {
 #endif
 } 
 
-// forward declaration
-void PROF_init_thread();
-
 void PROF_init_module() {
   time_t start = time(NULL);
   DIE_NULL(localtime_r(&start, &start_time));
@@ -173,7 +170,6 @@ void PROF_init_module() {
 void PROF_init_thread() {
   PROF_INC_OFFSET(); 
   // Set the k_thread_exit to a dummy value (which we'll never use)
-  // TODO: wraparound!
   DIE_NZ(pthread_setspecific(k_thread_exit, (void *) 1));
   PROF_thread_hist = PROF_INC_CURR();
 }
