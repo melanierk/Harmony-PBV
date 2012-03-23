@@ -5,7 +5,9 @@
 #include <sys/time.h>
 #include <time.h>
 
+#ifndef PROF_MAX_THREADS
 #define PROF_MAX_THREADS 16
+#endif
 
 #include <string.h>
 #include <errno.h>
