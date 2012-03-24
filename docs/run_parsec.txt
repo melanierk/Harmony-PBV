@@ -1,0 +1,28 @@
+-------------------------------------------------------------------------------
+                  INSTRUCTIONS FOR RUNNING PARSEC WITH HARMONY
+-------------------------------------------------------------------------------
+
+Parsec is a popular multithreaded benchmark suite from Princeton University
+(see http://parsec.cs.princeton.edu/). Parsec will not run "out of the box"
+with Harmony. This is primarily because the version of clang that Harmony
+inherits from requires strict adherance to C/C++ standards, and Parsec does not
+always use ISO C/C++. 
+
+To support users who want to run Parsec with Harmony, we have provided a few
+helpful files in this distribution within the parsec/ directory.
+
+1) First, there is a Parsec patch that modifies Parsec's package source files tomake them compilable by clang/LLVM. To use it, call:
+
+2) Second, we provide a sample configuration file, parsec/harmony.bldconf, that
+can be added via the Parsec management tool's bldconfadd program (see
+http://parsec.cs.princeton.edu/doc/man/man1/bldconfadd.1.html).
+
+3) Finally, a sample runscript which makes calls to the Parsec management tool 
+can be found in parsec/run.sh
+
+When collecting and examining Parsec PBV profiles, it is important to note that
+the current parsecmgmt tool does not provide a simple way to set the number of
+threads executed across all of its benchmark programs.  A command line option,
+"-n", allows users to easily set a minimum thread count threshold, but does not
+guarantee any maximum thread count.  Maximum thread counts need to be set using
+command line options or source modifications per benchmark program.

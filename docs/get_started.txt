@@ -1,0 +1,40 @@
+-------------------------------------------------------------------------------
+                                 QUICK START GUIDE
+-------------------------------------------------------------------------------
+
+In this document, you will find instructions on how to start using Harmony.
+
+We'll describe how to run Harmony with a sample program, A.cpp, which is
+included in lto_test.  The process for running Harmony with other programs is
+similar.
+
+----
+ 
+1) First, make sure you have properly installed Harmony by following the
+instructions in docs/INSTALL. 
+
+2) Next, compile the program
+
+3)
+
+4) Run the executable produced by the compilation in step 3).  A.cpp
+takes no inputs, but if inputs are required in your program, they can be
+provided as they would be normally.  
+
+5) Find the produced profile, which is a binary representation of a
+Pandas (www.pandas.pydata.org/) DataFrame object.  Now, you can use Pandas to
+analyze, manipulate, or create visulizations of the profile data.  In the next
+release, we plan to provide a few sample profile analysis tools.
+Alternatively, you can use the script provided in analysis/ to dump the profile
+to a text file.  Simply call:
+
+	> ./analysis/load_profile.py A_profile.prof
+
+----
+
+You should be able to follow similar steps to compile any C or C++ program. 
+Please remember, however, that programs which cannot be compiled with
+clang/llvm will not be compileable with the Harmony-extended clang either. 
+
+For notes on compiling the Parsec benchmark suite, see our special instructions
+in docs/run_parsec.txt. 

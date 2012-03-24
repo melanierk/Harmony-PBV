@@ -1,4 +1,4 @@
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
                                   HARMONY 1.0
 
                   A Tool for Collecting Parallel Block Vectors 
@@ -20,13 +20,13 @@ original output as well as a PBV profile.
 License
 -------------------------------------------------------------------------------
 Harmony is released under the new BSD license like the clang LLVM frontend that
-we've modified. Note that some of the included LLVM source included in this 
-distribution is under MIT and UIUC licenses. 
+is its basis. Note that some of the LLVM source files included in this
+distribution are under MIT and UIUC licenses. 
 
 -------------------------------------------------------------------------------
 Download and Installation
 -------------------------------------------------------------------------------
-Harmony is available for download at:
+The latest release of Harmony is available for download at:
 Please see docs/INSTALL for installation instructions. 
 
 -------------------------------------------------------------------------------
