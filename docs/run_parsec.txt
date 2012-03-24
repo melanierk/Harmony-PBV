@@ -11,7 +11,8 @@ always use ISO C/C++.
 To support users who want to run Parsec with Harmony, we have provided a few
 helpful files in this distribution within the parsec/ directory.
 
-1) First, there is a Parsec patch that modifies Parsec's package source files tomake them compilable by clang/LLVM. To use it, call:
+1) First, there is a Parsec patch that modifies Parsec's package source files
+to make them compilable by clang/LLVM. To use it, call:
 
 2) Second, we provide a sample configuration file, parsec/harmony.bldconf, that
 can be added via the Parsec management tool's bldconfadd program (see
