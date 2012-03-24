@@ -1,0 +1,42 @@
+-------------------------------------------------------------------------------
+                                  HARMONY 1.0
+
+                  A Tool for Collecting Parallel Block Vectors 
+                   Melanie Kambadur, Kui Tang, and Martha Kim
+-------------------------------------------------------------------------------
+
+Harmony is designed to efficiently collect parallel block vectors (PBVs),
+profiles which establish a mapping between static basic blocks in a
+multithreaded application and the degrees of parallelism exhibited in those
+blocks’ dynamic executions.  Harmony collects PBVs via compiler inserted
+instrumentation and dynamic profiling.  It is built into the clang frontend
+(www.clang.llvm.org/) for LLVM (www.llvm.org/).  User programs are compiled
+with the modified version of clang, and at link time, an instrumentation pass
+inserts profiling code across the entire program.  The resulting instrumented
+executables can be run normally with any user inputs, and will produce their
+original output as well as a PBV profile. 
+
+-------------------------------------------------------------------------------
+License
+-------------------------------------------------------------------------------
+Harmony is released under the new BSD license like the clang LLVM frontend that
+we've modified. Note that some of the included LLVM source included in this 
+distribution is under MIT and UIUC licenses. 
+
+-------------------------------------------------------------------------------
+Download and Installation
+-------------------------------------------------------------------------------
+Harmony is available for download at:
+Please see docs/INSTALL for installation instructions. 
+
+-------------------------------------------------------------------------------
+Project Information
+-------------------------------------------------------------------------------
+* A quick start guide is available in docs/get_started.txt
+* A profile post-processing toolkit will be released soon. For now, PBV profiles
+  are output into Pandas (www.pandas.pydata.org/) DataFrames. A script to dump
+  the profiles to a csv-text format is provided in this initial release and
+  discussed in the quick start guide. 
+* See our ISCA 2012 paper, "Harmony: Collection and Analysis of Parallel Block
+  Vectors", for more information about parallel block vectors, Harmony's 
+  implementation, and for sample applications of this tool.  
