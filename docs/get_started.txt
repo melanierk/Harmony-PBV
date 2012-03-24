@@ -22,9 +22,9 @@ takes no inputs, but if inputs are required in your program, they can be
 provided as they would be normally.  
 
 5) Find the produced profile, which is a binary representation of a
-Pandas (www.pandas.pydata.org/) DataFrame object.  Now, you can use Pandas to
-analyze, manipulate, or create visulizations of the profile data.  In the next
-release, we plan to provide a few sample profile analysis tools.
+Pandas (http://pandas.pydata.org/) DataFrame object.  Now, you can use Pandas
+to analyze, manipulate, or create visulizations of the profile data.  In the
+next release, we plan to provide a few sample profile analysis tools.
 Alternatively, you can use the script provided in analysis/ to dump the profile
 to a text file.  Simply call:
 

@@ -4,9 +4,10 @@
 
 This document contains instructions for installing and configuring Harmony.
 
-Our source files (www.github/...) include clang (v. Dragonegg 3.0) and 
-LLVM (v. 3.0), so you do not need to download these tools separately. You
-should make sure, however, that you have the following system prerequisites:
+Our source files (http://github.com/melanierk/Harmony-PBV) include clang (v.
+Dragonegg 3.0) and LLVM (v. 3.0), so you do not need to download these tools
+separately. You should make sure, however, that you have the following system
+prerequisites:
 
 1) 32 or 64 bit Unix O/S.
 2) Updated linker ....
